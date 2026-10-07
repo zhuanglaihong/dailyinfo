@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "model": "deepseek-flash",
+  "topics": [
+    {
+      "id": "ai_for_science",
+      "name": "AI for Science",
+      "enabled": true,
+      "description": "关注人工智能在科学研究中的具体方法、数据、可复现工具和实际应用；优先推荐有原始来源和明确技术贡献的内容。",
+      "include_terms": ["AI for Science", "scientific machine learning", "科学机器学习", "physics-informed", "科学发现", "水文", "hydrology"],
+      "exclude_terms": ["付费培训", "荐股"],
+      "categories": ["papers", "arxiv", "ai_news", "code"],
+      "lookback_hours": 72,
+      "min_relevance": 60,
+      "max_candidates": 100,
+      "daily_limits": {"papers": 5, "arxiv": 5, "ai_news": 3, "code": 3},
+      "arxiv_queries": ["all:\"scientific machine learning\"", "all:\"physics-informed\""]
+    }
+  ]
+}

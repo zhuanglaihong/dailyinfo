@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-import fcntl
 import json
 import logging
 import os
@@ -22,6 +21,7 @@ from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
 
 from .delivery import sanitize_error
+from .filelock import fcntl
 from .models import Item, PublicationBundle
 from .serialization import briefing_to_dict, item_to_dict
 from .validation import validate_bundle

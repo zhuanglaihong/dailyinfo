@@ -742,14 +742,22 @@ def test_an_unreadable_notice_file_is_reported(monkeypatch, tmp_path):
     date = _publish_bundle("papers", "nature")
     path = BRIEFINGS_DIR / "papers" / f"wrr_briefing_{date}.md"
     _seed_briefing(BRIEFINGS_DIR, "papers", f"wrr_briefing_{date}.md", "x")
-    path.chmod(0)
+    # chmod(0) does not deny reads on Windows (or when POSIX tests run as root).
+    # Exercise the actual read-error branch without relying on host permissions.
+    from pathlib import Path
+
+    original_read = Path.read_text
+
+    def unreadable_notice(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError("simulated unreadable notice")
+        return original_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", unreadable_notice)
 
     logs: list[str] = []
     monkeypatch.setattr(pd, "log", logs.append)
-    try:
-        statuses = pd.collect_source_status("papers", date)
-    finally:
-        path.chmod(0o644)
+    statuses = pd.collect_source_status("papers", date)
 
     assert [(s.name, s.status) for s in statuses] == [
         ("nature", "pushed"),

@@ -416,7 +416,7 @@ class RSSDataSource(DataSource):
             return self._filter_seen(items)
 
         rows = self._db.execute(
-            f"SELECT title, link, date, {guid_select} FROM entry "
+            f"SELECT title, content, link, date, {guid_select} FROM entry "
             "WHERE id_feed=? AND lastSeen>? ORDER BY date DESC",
             [fid, self._cutoff_ts],
         ).fetchall()
@@ -431,6 +431,7 @@ class RSSDataSource(DataSource):
                     title=row["title"] or "",
                     date=source_time.astimezone(_BEIJING_TZ).strftime("%Y-%m-%d"),
                     url=row["link"] or "",
+                    content=strip_html(row["content"] or "")[:6000],
                     extra={
                         **self._rss_extra(row["feed_guid"]),
                         "source_published_at": source_time,
@@ -464,7 +465,11 @@ class RSSDataSource(DataSource):
         return batches[: self.max_batches]
 
     def format_items(self, items: list[Item]) -> str:
-        return "\n".join(f"{i+1}. {item.title}" for i, item in enumerate(items))
+        return "\n".join(
+            f"{i+1}. {item.title}"
+            + (f"\n   来源摘要：{item.content}" if item.content else "")
+            for i, item in enumerate(items)
+        )
 
 
 # ---------------------------------------------------------------------------

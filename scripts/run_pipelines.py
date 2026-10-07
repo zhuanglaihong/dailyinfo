@@ -15,7 +15,7 @@ Usage:
 import argparse
 from contextlib import contextmanager
 import datetime
-import fcntl
+from publication.filelock import fcntl
 import json
 import os
 import re
@@ -941,11 +941,13 @@ def _store_lock():
     root = PublicationStore().root
     root.mkdir(parents=True, exist_ok=True)
     handle = (root / ".lock").open("a+", encoding="utf-8")
+    acquired = False
     try:
         deadline = time.monotonic() + _STORE_LOCK_TIMEOUT_SECONDS
         while True:
             try:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
@@ -957,7 +959,8 @@ def _store_lock():
         yield
     finally:
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            if acquired:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         finally:
             handle.close()
 

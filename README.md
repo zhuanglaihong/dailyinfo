@@ -1,8 +1,12 @@
 # DailyInfo
 
-[中文](https://github.com/iHeadWater/dailyinfo/blob/main/README.zh-CN.md) | English
+[中文](README.zh-CN.md) | English
 
-DailyInfo is an automated research intelligence collector for AI for Science researchers. Every day it gathers journal papers, AI news, arXiv preprints, code trends, and university announcements from RSS feeds, scraped pages, and APIs — then turns them into concise Chinese-language briefings delivered straight to your Discord.
+DailyInfo is an AI research intelligence and daily recommendation tool built with **Python, FreshRSS and DeepSeek**. It aggregates journal papers, arXiv preprints, AI news, GitHub trends, HuggingFace models and university updates from RSS feeds, websites and APIs, then generates Chinese summaries, topic relevance scores and reading recommendations delivered through **email, Feishu or Discord**.
+
+It combines configurable topics and exclusion terms, optional arXiv topic search, daily category limits, persistent AI caching, cross-day deduplication and independent delivery recovery. Docker Compose manages FreshRSS; SQLite stores recommendation analysis and digest delivery state; SMTP and signed Feishu Webhooks provide notification channels. A unified CLI works with your external scheduler.
+
+Configure `config/topics.json` and `config/delivery.json` to personalize your digest. See the [recommendation and delivery guide](docs/recommendations.md) and [local sample digest](examples/daily_digest.preview.md).
 
 ## How It Works
 
@@ -12,15 +16,17 @@ One pipeline, five independent sources of information:
 FreshRSS / scrape / API sources
   -> dailyinfo run
   -> structured summaries + canonical PublicationStore
-  -> dailyinfo publish --sink web / discord
-  -> independent delivery sinks + local state
+  -> dailyinfo recommend [--search-arxiv]
+  -> topic-based daily digest + reading recommendations
+  -> dailyinfo deliver
+  -> email / Feishu / Discord + independent local delivery state
 ```
 
 1. **Collect** — five independent pipelines pull from 40+ feeds, pages, and APIs. A failure in one never blocks the others.
 2. **Summarize and finalize** — DeepSeek produces structured summaries; DailyInfo validates and persists one canonical PublicationBundle per category/date while retaining the legacy Markdown output.
-3. **Deliver** — `dailyinfo publish` sends the canonical bundle to selected sinks. Discord and Web delivery state are independent and retryable.
+3. **Recommend and deliver** — AI ranks candidates against your topics and explains why they are worth reading. `dailyinfo deliver` routes the digest to email, Feishu and optional Discord. Existing Discord and Web publication commands remain available.
 
-You wake up to a curated digest of everything relevant to your field — no feed readers to check, no email, no noise.
+Start with a small daily selection of relevant papers, articles and technical updates, each with a summary, recommendation reason and original source link.
 
 ## Features
 
@@ -29,6 +35,8 @@ You wake up to a curated digest of everything relevant to your field — no feed
 | **Five pipelines** | Papers (30+ journals, including Chinese water-resources journals) · AI news · arXiv CS.AI (up to 500 preprints/day) · GitHub trending + HuggingFace models · University updates |
 | **Chinese-first briefings** | AI summaries in Chinese with automatic fallback to a Zhipu GLM model when the primary API fails |
 | **Configuration-driven** | Add RSS, scrape, or API sources in `config/sources.json` — no code changes required |
+| **Topic recommendations** | Configure interests, exclusion terms, relevance thresholds and daily limits in `config/topics.json` |
+| **Multi-channel digests** | Email for papers, Feishu for combined recommendations, optional Discord; per-destination delivery state and cross-day deduplication |
 | **Idempotent & safe to rerun** | Sources with today's briefing are skipped; pushed files are never re-sent |
 | **Resilient** | Retries with exponential backoff, batch splitting on partial AI responses, per-source isolation |
 | **Scheduler-agnostic** | Bring your own cron, systemd timer, or agent runtime — DailyInfo owns the pipeline, not the clock |
@@ -85,11 +93,12 @@ Default data root: `~/.myagentdata/dailyinfo/`. Override it with `DAILYINFO_DATA
 ## Quick Start
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/zhuanglaihong/dailyinfo.git
 cd dailyinfo
 
 cp .env.example .env
-# Fill DEEPSEEK_API_KEY and DISCORD_BOT_TOKEN.
+# Fill DEEPSEEK_API_KEY and the SMTP / Feishu settings for your chosen channels.
+# Discord is optional; configure DISCORD_BOT_TOKEN only when using it.
 
 uv sync --python python3
 uv pip install -e .
@@ -97,7 +106,9 @@ dailyinfo install
 
 dailyinfo start
 dailyinfo run
-dailyinfo push
+dailyinfo recommend
+dailyinfo deliver --dry-run
+dailyinfo deliver
 ```
 
 `dailyinfo install` validates `.env`, creates local data directories, and installs dependencies. It does not write crontab entries; scheduling belongs to your cron or agent runtime.
@@ -164,5 +175,7 @@ DailyInfo intentionally avoids owning the scheduler. Recommended ownership:
 - [Information Sources](sources.md)
 
 ## License
+
+Based on [iHeadWater/dailyinfo](https://github.com/iHeadWater/dailyinfo), extended with personal topic recommendations and multi-channel digest delivery. Original copyright and license notices are retained.
 
 BSD 3-Clause License. See [LICENSE](LICENSE) for details.

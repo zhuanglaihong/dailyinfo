@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "routes": [
+    {
+      "id": "email_papers",
+      "enabled": true,
+      "sink": "email",
+      "categories": ["papers", "arxiv"],
+      "target_env": "DAILYINFO_EMAIL_TO"
+    },
+    {
+      "id": "feishu_daily",
+      "enabled": true,
+      "sink": "feishu",
+      "categories": ["papers", "arxiv", "ai_news", "code"],
+      "target_env": "FEISHU_WEBHOOK_URL",
+      "secret_env": "FEISHU_WEBHOOK_SECRET"
+    },
+    {
+      "id": "discord_daily",
+      "enabled": false,
+      "sink": "discord",
+      "categories": ["papers", "arxiv", "ai_news", "code"],
+      "target_env": "DISCORD_DIGEST_CHANNEL"
+    }
+  ]
+}

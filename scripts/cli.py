@@ -134,7 +134,7 @@ def install():
     from paths import env_suffix
 
     suffix = env_suffix()
-    required = ["DEEPSEEK_API_KEY", "DISCORD_BOT_TOKEN"]
+    required = ["DEEPSEEK_API_KEY"]
     channel_keys = [
         f"DISCORD_CHANNEL_PAPERS{suffix}",
         f"DISCORD_CHANNEL_AI_NEWS{suffix}",
@@ -142,7 +142,7 @@ def install():
         f"DISCORD_CHANNEL_RESOURCE{suffix}",
         f"DISCORD_CHANNEL_ARXIV{suffix}",
     ]
-    env = _read_env_keys(required + channel_keys)
+    env = _read_env_keys(required + ["DISCORD_BOT_TOKEN"] + channel_keys)
 
     missing = [k for k in required if not env[k] or "your_" in env[k]]
     if missing:
@@ -150,7 +150,11 @@ def install():
         sys.exit(1)
 
     unset_channels = [k for k in channel_keys if not env[k]]
-    if unset_channels:
+    if (
+        unset_channels
+        and env["DISCORD_BOT_TOKEN"]
+        and "your_" not in env["DISCORD_BOT_TOKEN"]
+    ):
         click.echo(
             f"  WARN: no channel id for {', '.join(unset_channels)} "
             f"— those categories will be skipped at push time"
@@ -356,10 +360,10 @@ def resume(category, source):
 @cli.command()
 @click.option(
     "--sink",
-    type=click.Choice(["discord", "web", "all"]),
+    type=click.Choice(["discord", "web", "email", "feishu", "all"]),
     default="web",
     show_default=True,
-    help="Publication delivery sink. 'all' attempts Discord and Web independently.",
+    help="Publication delivery sink. 'all' retains the Discord + Web workflow; use deliver for configured digest routes.",
 )
 @click.option(
     "-d",
@@ -393,10 +397,14 @@ def publish(sink, date_str, categories, force):
         scripts.append(SCRIPTS_DIR / "push_to_discord.py")
     if sink in ("web", "all"):
         scripts.append(SCRIPTS_DIR / "publish_to_web.py")
+    if sink in ("email", "feishu"):
+        scripts.append(SCRIPTS_DIR / "deliver.py")
 
     return_codes = []
     for script in scripts:
         cmd = [_python(), str(script)]
+        if sink in ("email", "feishu"):
+            cmd += ["--sink", sink, "--source", "publications"]
         if date_str:
             cmd += ["--date", date_str]
         if categories:
@@ -406,6 +414,135 @@ def publish(sink, date_str, categories, force):
         result = subprocess.run(cmd, cwd=PROJECT_ROOT)
         return_codes.append(result.returncode)
     sys.exit(1 if any(code != 0 for code in return_codes) else 0)
+
+
+@cli.command()
+@click.option(
+    "-d",
+    "--date",
+    "date_str",
+    default=None,
+    help="Digest date in YYYY-MM-DD, defaults to Beijing today.",
+)
+@click.option("--topics", type=click.Path(exists=True, dir_okay=False), default=None)
+@click.option(
+    "--no-ai",
+    is_flag=True,
+    help="Generate a separate keyword-only preview, with no AI calls.",
+)
+@click.option("--force", is_flag=True, help="Recompute cached AI recommendations.")
+@click.option(
+    "--search-arxiv",
+    is_flag=True,
+    help="Also collect papers using topics' arxiv_queries.",
+)
+def recommend(date_str, topics, no_ai, force, search_arxiv):
+    """Generate daily topic recommendations without sending messages."""
+    cmd = [_python(), str(SCRIPTS_DIR / "recommend.py")]
+    for key, value in (("--date", date_str), ("--topics", topics)):
+        if value:
+            cmd += [key, value]
+    for key, value in (
+        ("--no-ai", no_ai),
+        ("--force", force),
+        ("--search-arxiv", search_arxiv),
+    ):
+        if value:
+            cmd.append(key)
+    sys.exit(subprocess.run(cmd, cwd=PROJECT_ROOT).returncode)
+
+
+@cli.command()
+@click.option(
+    "--sink",
+    type=click.Choice(["email", "feishu", "discord", "all"]),
+    default="all",
+    show_default=True,
+)
+@click.option("-d", "--date", "date_str", default=None)
+@click.option("-c", "--categories", default=None)
+@click.option("--routes", type=click.Path(exists=True, dir_okay=False), default=None)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Preview routed content without network requests or delivery-state writes.",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Resend a successful digest; pending deliveries still require explicit recovery.",
+)
+def deliver(sink, date_str, categories, routes, dry_run, force):
+    """Deliver the existing AI daily digest through enabled email/Feishu/Discord routes."""
+    cmd = [_python(), str(SCRIPTS_DIR / "deliver.py"), "--sink", sink]
+    for key, value in (
+        ("--date", date_str),
+        ("--categories", categories),
+        ("--routes", routes),
+    ):
+        if value:
+            cmd += [key, value]
+    if dry_run:
+        cmd.append("--dry-run")
+    if force:
+        cmd.append("--force")
+    sys.exit(subprocess.run(cmd, cwd=PROJECT_ROOT).returncode)
+
+
+@cli.command("delivery-status")
+def delivery_status():
+    """Show digest outbox state without showing recipient addresses or secrets."""
+    from notifications import Outbox
+    from paths import STATE_DIR
+
+    db_path = STATE_DIR / "notifications.sqlite3"
+    if not db_path.exists():
+        click.echo("No digest deliveries recorded.")
+        return
+    for record in Outbox(db_path).status():
+        click.echo(
+            f"{record['key']} {record['sink']} {record['status']} attempts={record['attempts']}"
+        )
+        if record["error"]:
+            click.echo(f"  {record['error']}")
+
+
+@cli.command("delivery-reset")
+@click.argument("key")
+def delivery_reset(key):
+    """Release one uncertain delivery after checking whether the recipient got it."""
+    from notifications import Outbox
+    from paths import STATE_DIR
+
+    click.confirm(
+        "Reset this pending delivery? Retrying may send a duplicate. Check the recipient and ensure no delivery worker is running.",
+        abort=True,
+    )
+    try:
+        Outbox(STATE_DIR / "notifications.sqlite3").reset(key)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo("Delivery reset; rerun dailyinfo deliver to retry.")
+
+
+@cli.command("delivery-confirm")
+@click.argument("key")
+def delivery_confirm(key):
+    """Mark one uncertain digest delivered after checking the recipient."""
+    from notifications import Outbox
+    from paths import STATE_DIR
+
+    click.confirm(
+        "Confirm this pending digest was received, and no delivery worker is running?",
+        abort=True,
+    )
+    try:
+        Outbox(STATE_DIR / "notifications.sqlite3").confirm(key)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(
+        "Delivery confirmed; later digests may proceed without resending these items."
+    )
 
 
 @cli.command()
