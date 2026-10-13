@@ -434,9 +434,11 @@ PROBES: tuple[Probe, ...] = (
         path="scripts/run_pipelines.py",
         old=(
             "                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+            "                acquired = True\n"
             "                break"
         ),
-        new="                pass\n                break",
+        # No lock was acquired, so do not unlock it in finally either.
+        new="                acquired = False\n                break",
         test=(
             "tests/test_publication_unified.py"
             "::test_the_store_lock_excludes_a_second_writer"
